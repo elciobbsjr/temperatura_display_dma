@@ -85,7 +85,7 @@ int main() {
 
     while (true) {
         uint32_t now = to_ms_since_boot(get_absolute_time());
-        if (now - last_temp_time >= 1000) {
+        if (now - last_temp_time >= 1000) { //Tempo de atualização 
             adc_run(true);
             dma_channel_start(dma_chan);
             dma_channel_wait_for_finish_blocking(dma_chan);
