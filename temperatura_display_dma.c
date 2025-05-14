@@ -13,13 +13,13 @@
 
 #define OLED_WIDTH 128
 #define OLED_HEIGHT 64
+#define SAMPLE_COUNT 100
 
-// Definindo M_PI caso não esteja disponível
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-uint16_t adc_buffer[1];
+uint16_t adc_buffer[SAMPLE_COUNT];
 
 float adc_to_temp(uint16_t raw_adc) {
     const float V_ref = 3.3f;
@@ -56,6 +56,35 @@ void draw_sun(uint8_t *buffer, int center_x, int center_y, int frame) {
     }
 }
 
+float read_temperature_average_dma(int dma_chan) {
+    // Reconfigura o DMA antes de cada uso
+    dma_channel_config dma_cfg = dma_channel_get_default_config(dma_chan);
+    channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_16);
+    channel_config_set_read_increment(&dma_cfg, false);
+    channel_config_set_write_increment(&dma_cfg, true);  // Correto: incrementa o buffer!
+
+    dma_channel_configure(
+        dma_chan, &dma_cfg, 
+        adc_buffer,              // Destino
+        &adc_hw->fifo,           // Fonte (FIFO do ADC)
+        SAMPLE_COUNT, 
+        false                    // Não inicia ainda
+    );
+
+    adc_fifo_drain();            // Garante FIFO vazio antes de começar
+    adc_run(true);
+    dma_channel_start(dma_chan);
+    dma_channel_wait_for_finish_blocking(dma_chan);
+    adc_run(false);
+
+    float temp_sum = 0.0f;
+    for (int i = 0; i < SAMPLE_COUNT; i++) {
+        temp_sum += adc_to_temp(adc_buffer[i]);
+    }
+
+    return temp_sum / SAMPLE_COUNT;
+}
+
 int main() {
     stdio_init_all();
 
@@ -64,7 +93,7 @@ int main() {
     ssd1306_t oled;
     ssd1306_init_bm(&oled, OLED_WIDTH, OLED_HEIGHT, false, ssd1306_i2c_address, I2C_PORT);
     ssd1306_config(&oled);
-    ssd1306_init();  // Garante inicialização completa via comandos diretos
+    ssd1306_init();
 
     adc_init();
     adc_set_temp_sensor_enabled(true);
@@ -72,11 +101,6 @@ int main() {
     adc_fifo_setup(true, true, 1, false, false);
 
     int dma_chan = dma_claim_unused_channel(true);
-    dma_channel_config dma_cfg = dma_channel_get_default_config(dma_chan);
-    channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_16);
-    channel_config_set_read_increment(&dma_cfg, false);
-    channel_config_set_write_increment(&dma_cfg, false);
-    dma_channel_configure(dma_chan, &dma_cfg, adc_buffer, &adc_hw->fifo, 1, false);
 
     char display_buffer[32];
     int frame = 0;
@@ -85,19 +109,13 @@ int main() {
 
     while (true) {
         uint32_t now = to_ms_since_boot(get_absolute_time());
-        if (now - last_temp_time >= 1000) { //Tempo de atualização 
-            adc_run(true);
-            dma_channel_start(dma_chan);
-            dma_channel_wait_for_finish_blocking(dma_chan);
-            adc_run(false);
-
-            temp_c = adc_to_temp(adc_buffer[0]);
+        if (now - last_temp_time >= 1000) {  // Atualiza a cada 1 segundo
+            temp_c = read_temperature_average_dma(dma_chan);
             last_temp_time = now;
+
+            snprintf(display_buffer, sizeof(display_buffer), "Temp: %.1f°C", temp_c);
+            printf("Temperatura Média: %.2f °C\n", temp_c);
         }
-
-        snprintf(display_buffer, sizeof(display_buffer), "Temp: %d°C", (int)temp_c);
-
-        printf("Temperatura Interna: %.2f °C\n", temp_c);
 
         memset(oled.ram_buffer + 1, 0, oled.bufsize - 1);
 
