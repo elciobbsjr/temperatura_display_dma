@@ -18,7 +18,7 @@
 #define SAMPLE_COUNT 100  // Número de amostras por ciclo de leitura de temperatura
 
 #ifndef M_PI
-#define M_PI 3.14159265358979323846  // Definindo PI caso não esteja definido
+#define M_PI 3.14159265358979323846  // Definindo PI
 #endif
 
 // Buffer para armazenar as leituras do ADC e flag de controle de DMA
