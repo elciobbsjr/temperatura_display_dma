@@ -65,6 +65,7 @@ target_link_libraries(temperatura_display_dma
     hardware_i2c
     hardware_gpio
     hardware_clocks
+    hardware_rtc
 )
 
 pico_add_extra_outputs(temperatura_display_dma)
